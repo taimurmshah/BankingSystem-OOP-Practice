@@ -12,6 +12,7 @@ class BankingSystem extends BankingSystemInterface {
 
         this.accounts[accountId] = {
             balance: 0,
+            totalOutgoing: 0,
             createdAt: timestamp
         }
 
@@ -37,9 +38,38 @@ class BankingSystem extends BankingSystemInterface {
         if (this.accounts[sourceAccountId].balance < amount) return null
 
         this.accounts[sourceAccountId].balance -= amount
+        this.accounts[sourceAccountId].totalOutgoing += amount
+
         this.accounts[targetAccountId].balance += amount
 
         return this.accounts[sourceAccountId].balance
+    }
+
+    topSpenders(timestamp, n) {
+        let sortedAccounts = this._sortTopSpenders()
+
+        if (n < sortedAccounts.length) sortedAccounts = sortedAccounts.slice(0, n)
+
+        return this._formatAccounts(sortedAccounts)
+    }
+
+    _sortTopSpenders() {
+        return Object.entries(this.accounts).sort((acctA, acctB) => {
+            // console.log({ acctA })
+            const amtA = acctA[1].totalOutgoing
+            const amtB = acctB[1].totalOutgoing
+
+            if (amtA == amtB) {
+                return acctA[0].localeCompare(acctB[0])
+            }
+            else return amtB - amtA
+        })
+    }
+
+    _formatAccounts(accounts) {
+        return accounts.map(a => {
+            return `${a[0]}(${a[1].totalOutgoing})`
+        })
     }
 }
 
