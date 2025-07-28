@@ -5,6 +5,7 @@ class BankingSystem extends BankingSystemInterface {
         super();
 
         this.accounts = {};
+        this.allPayments = [];
     }
 
     createAccount(timestamp, accountId) {
@@ -22,18 +23,22 @@ class BankingSystem extends BankingSystemInterface {
     deposit(timestamp, accountId, amount) {
         if (!this.accounts[accountId]) return null
 
+        //execute payments that are scheduled before current transaction
+        this._executeScheduledPayments(timestamp)
+
         this.accounts[accountId].balance += amount
 
         return this.accounts[accountId].balance
     }
 
     transfer(timestamp, sourceAccountId, targetAccountId, amount) {
+        //execute scheduled payments before moving forward
+        this._executeScheduledPayments(timestamp)
+
         //if either account doesn't exist
         if (!this.accounts[sourceAccountId] || !this.accounts[targetAccountId]) return null
-
         //if the accountIds are the same
         if (sourceAccountId == targetAccountId) return null
-
         //insufficient funds
         if (this.accounts[sourceAccountId].balance < amount) return null
 
@@ -45,7 +50,52 @@ class BankingSystem extends BankingSystemInterface {
         return this.accounts[sourceAccountId].balance
     }
 
+    schedulePayment(timestamp, accountId, amount, delay) {
+        // this._executeScheduledPayments(timestamp)
+        if (!this.accounts[accountId]) return null
+
+        const paymentId = "payment" + (this.allPayments.length + 1).toString()
+
+        const payment = {
+            id: paymentId,
+            accountId: accountId,
+            amount: amount,
+            currentStatus: "Scheduled",
+            timestamp: timestamp,
+            delay: delay,
+            executionTime: timestamp + delay
+        }
+
+        //all payments "table"
+        this.allPayments.push(payment)
+
+        return paymentId
+    }
+
+    cancelPayment(timestamp, accountId, paymentId) {
+
+        const foundPayment = this.allPayments.filter(p => {
+            return p.id == paymentId && p.accountId == accountId
+        })
+
+        //if payment doesn't exist
+        if (foundPayment.length != 1) return false;
+
+        const payment = foundPayment[0]
+        //wrong account
+        if (payment.accountId != accountId) return false;
+        //already canceled
+        if (payment.currentStatus != "Scheduled") return false;
+
+        payment.currentStatus = "Canceled"
+
+        this._executeScheduledPayments(timestamp)
+
+        return true
+    }
+
     topSpenders(timestamp, n) {
+        this._executeScheduledPayments(timestamp)
         let sortedAccounts = this._sortTopSpenders()
 
         if (n < sortedAccounts.length) sortedAccounts = sortedAccounts.slice(0, n)
@@ -71,6 +121,27 @@ class BankingSystem extends BankingSystemInterface {
             return `${a[0]}(${a[1].totalOutgoing})`
         })
     }
+
+    _executeScheduledPayments(timestamp) {
+        let paymentsToExecute = this.allPayments.filter(p => ((p.executionTime <= timestamp) && (p.currentStatus == "Scheduled")))
+
+        if (paymentsToExecute.length > 1) { paymentsToExecute.sort((a, b) => a.executionTime - b.executionTime) }
+
+        while (paymentsToExecute.length > 0) {
+            const pte = paymentsToExecute.shift()
+            const account = this.accounts[pte.accountId]
+
+            if (account.balance < pte.amount) {
+                pte.currentStatus = "InsufficientFunds"
+            } else {
+                account.balance -= pte.amount
+                account.totalOutgoing += pte.amount
+                pte.currentStatus = "Executed"
+            }
+        }
+    }
+
+
 }
 
 module.exports = BankingSystem;
