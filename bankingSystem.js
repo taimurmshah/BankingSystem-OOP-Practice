@@ -6,6 +6,8 @@ class BankingSystem extends BankingSystemInterface {
 
         this.accounts = {};
         this.allPayments = [];
+        this.transactionHistory = {};
+        this.mergeHistory = {};
     }
 
     createAccount(timestamp, accountId) {
@@ -15,7 +17,9 @@ class BankingSystem extends BankingSystemInterface {
             balance: 0,
             totalOutgoing: 0,
             createdAt: timestamp
-        }
+        };
+
+        this.transactionHistory[accountId] = [];
 
         return true
     }
@@ -27,6 +31,8 @@ class BankingSystem extends BankingSystemInterface {
         this._executeScheduledPayments(timestamp)
 
         this.accounts[accountId].balance += amount
+
+        this._addToTransactionHistory(timestamp, accountId, amount, "Deposit")
 
         return this.accounts[accountId].balance
     }
@@ -46,6 +52,9 @@ class BankingSystem extends BankingSystemInterface {
         this.accounts[sourceAccountId].totalOutgoing += amount
 
         this.accounts[targetAccountId].balance += amount
+
+        this._addToTransactionHistory(timestamp, sourceAccountId, amount, "OutgoingTransfer")
+        this._addToTransactionHistory(timestamp, targetAccountId, amount, "IncomingTransfer")
 
         return this.accounts[sourceAccountId].balance
     }
@@ -103,6 +112,64 @@ class BankingSystem extends BankingSystemInterface {
         return this._formatAccounts(sortedAccounts)
     }
 
+    mergeAccounts(timestamp, accountId1, accountId2) {
+        if (!this.accounts[accountId1] || !this.accounts[accountId2]) return false
+        if (accountId1 == accountId2) return false
+
+        console.log("merging", accountId1 + " & " + accountId2)
+
+        //execute pending scheduled transactions before given timestamp
+        this._executeScheduledPayments(timestamp)
+
+        //find accts
+        const acct1 = this.accounts[accountId1]
+        const acct2 = this.accounts[accountId2]
+
+        // console.log(accountId1 + " txnHistory before merge:", this.transactionHistory[accountId1])
+
+        //combine balance and total outgoing
+        acct1.balance += acct2.balance
+        acct1.totalOutgoing += acct2.totalOutgoing
+
+        //find all scheduled payments for acct2 and set to acct1
+        const pmts = this.allPayments.filter(pmt => pmt.accountId == accountId2)
+        for (let pmt of pmts) pmt.accountId = accountId1
+
+        //keep track of merging
+
+        delete this.accounts[accountId2]
+
+        // console.log(accountId1 + " txnHistory after merge:", this.transactionHistory[accountId1])
+
+
+        return true
+    }
+
+    getBalance(timestamp, accountId, timeAt) {
+        if (!this.accounts[accountId]) return null
+
+        console.log("getBalance for " + accountId)
+        // console.log({ timestamp })
+        // console.log({ timeAt })
+        this._executeScheduledPayments(timestamp)
+
+        //filter for account's txns at certain timestamp
+        let balance = 0
+        let txnsAtTimestamp = this.transactionHistory[accountId].filter(txn => {
+            return txn.accountId == accountId && txn.timestamp <= timeAt
+        })
+
+        //
+        for (const txn of txnsAtTimestamp) {
+            if (txn.txnType == "Deposit" || txn.txnType == "IncomingTransfer") balance += txn.amount
+            else balance -= txn.amount
+        }
+
+        console.log({ balance })
+
+        return balance
+    }
+
     _sortTopSpenders() {
         return Object.entries(this.accounts).sort((acctA, acctB) => {
             // console.log({ acctA })
@@ -134,13 +201,25 @@ class BankingSystem extends BankingSystemInterface {
             if (account.balance < pte.amount) {
                 pte.currentStatus = "InsufficientFunds"
             } else {
+                // console.log("IN EXECUTE")
                 account.balance -= pte.amount
                 account.totalOutgoing += pte.amount
+                this._addToTransactionHistory(pte.executionTime, pte.accountId, pte.amount, "Payment")
                 pte.currentStatus = "Executed"
             }
         }
     }
 
+    _addToTransactionHistory(timestamp, accountId, amount, txnType) {
+        const txn = {
+            accountId: accountId,
+            amount: amount,
+            txnType: txnType,
+            timestamp: timestamp
+        }
+
+        this.transactionHistory[accountId].push(txn)
+    }
 
 }
 
